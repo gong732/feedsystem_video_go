@@ -1,0 +1,57 @@
+# Video Feed 三件套：一条命令拉起 MySQL + Redis + 应用
+# 使用: docker compose up -d --build
+# 停止: docker compose down        （保留数据卷）
+# 停止并清数据: docker compose down -v （危险，删卷）
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: video-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: video_feed   # 首次初始化自动建库（已有数据时忽略）
+    volumes:
+      - mysql_data:/var/lib/mysql  # 数据卷：容器删了数据还在
+    ports:
+      - "3306:3306"                # 宿主机 3306 → 容器 3306（本地开发也能连）
+    healthcheck:                   # 健康检查：MySQL 就绪前 app 不启动
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: video-redis
+    volumes:
+      - redis_data:/data           # Redis 持久化目录
+    ports:
+      - "6379:6379"
+
+  app:
+    build: .                       # 用项目根目录的 Dockerfile 构建
+    container_name: video-feed-app
+    environment:
+      # 容器内连数据库用"服务名"当主机名（compose 内部 DNS 解析），不再走 127.0.0.1
+      VIDEO_DB_HOST: mysql
+      VIDEO_DB_PORT: "3306"
+      VIDEO_DB_NAME: video_feed
+      VIDEO_DB_USER: root
+      VIDEO_DB_PASSWORD: "123456"
+      VIDEO_REDIS_HOST: redis
+      VIDEO_REDIS_PORT: "6379"
+      VIDEO_SERVER_PORT: "8081"
+      TZ: Asia/Shanghai
+    ports:
+      - "8081:8081"                # 前端入口
+    depends_on:
+      mysql:
+        condition: service_healthy # 等 MySQL 健康了再启动
+      redis:
+        condition: service_started
+
+volumes:
+  mysql_data:
+    external: true                 # 复用现有卷 blog_mysql_data，数据零丢失
+    name: blog_mysql_data
+  redis_data:                      # 新卷：Redis 缓存数据可由应用启动时重建

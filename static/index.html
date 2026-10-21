@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VideoFeed · Go 视频流</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    background:#0f1115; color:#e6e8eb; min-height:100vh;
+  }
+  a { color:#4cc2ff; text-decoration:none; }
+
+  /* 顶栏 */
+  .topbar {
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; gap:18px;
+    padding:12px 24px; background:rgba(15,17,21,0.92); backdrop-filter:blur(6px);
+    border-bottom:1px solid #23262e;
+  }
+  .logo { font-size:18px; font-weight:700; color:#fff; letter-spacing:.5px; }
+  .logo b { color:#4cc2ff; }
+  .nav { display:flex; gap:6px; margin-left:8px; }
+  .nav button {
+    background:transparent; border:none; color:#9aa0aa; font-size:14px;
+    padding:7px 14px; border-radius:8px; cursor:pointer; transition:.15s;
+  }
+  .nav button:hover { color:#fff; background:#1a1d24; }
+  .nav button.active { color:#fff; background:#23262e; font-weight:600; }
+  .spacer { flex:1; }
+  .userbox { display:flex; align-items:center; gap:10px; font-size:14px; }
+  .avatar {
+    width:30px; height:30px; border-radius:50%; background:#2d3440;
+    display:flex; align-items:center; justify-content:center;
+    color:#4cc2ff; font-size:13px; font-weight:700;
+  }
+  .btn {
+    border:none; cursor:pointer; border-radius:8px; font-size:13px;
+    padding:8px 16px; transition:.15s;
+  }
+  .btn-primary { background:#4cc2ff; color:#0b0e12; font-weight:600; }
+  .btn-primary:hover { background:#6fd0ff; }
+  .btn-ghost { background:#23262e; color:#c8ccd4; }
+  .btn-ghost:hover { background:#2d3440; color:#fff; }
+  .btn-danger { background:#3a1d1d; color:#ff8a8a; }
+
+  /* 内容区 */
+  .main { max-width:860px; margin:0 auto; padding:24px 16px 80px; }
+  .view-title { font-size:16px; font-weight:600; margin-bottom:16px; color:#fff; }
+  .view-title span { color:#7c828d; font-weight:400; font-size:13px; margin-left:8px; }
+
+  /* 视频卡片 */
+  .card {
+    display:flex; gap:14px; background:#171a21; border:1px solid #23262e;
+    border-radius:12px; padding:12px; margin-bottom:12px; cursor:pointer; transition:.15s;
+  }
+  .card:hover { background:#1d212a; border-color:#33384a; }
+  .thumb {
+    width:200px; height:112px; flex-shrink:0; border-radius:8px; overflow:hidden;
+    background:linear-gradient(135deg,#233043,#1a2332); position:relative;
+  }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb .placeholder {
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    font-size:30px; color:#4cc2ff; font-weight:700;
+  }
+  .thumb .dur {
+    position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,0.7);
+    color:#fff; font-size:11px; padding:1px 6px; border-radius:4px;
+  }
+  .card-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .card-title { font-size:15px; font-weight:600; color:#fff; line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .card-meta { display:flex; align-items:center; gap:12px; font-size:12px; color:#7c828d; flex-wrap:wrap; }
+  .card-meta .author { display:flex; align-items:center; gap:6px; }
+  .card-meta .mini-avatar {
+    width:22px; height:22px; border-radius:50%; background:#2d3440;
+    display:flex; align-items:center; justify-content:center; font-size:11px; color:#4cc2ff;
+  }
+  .follow-btn {
+    font-size:11px; padding:3px 9px; border-radius:6px; border:none; cursor:pointer;
+    background:#4cc2ff; color:#0b0e12; font-weight:600;
+  }
+  .follow-btn.done { background:#2d3440; color:#9aa0aa; }
+  .desc { font-size:12.5px; color:#9aa0aa; line-height:1.5;
+    display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
+
+  /* 热榜 */
+  .hot-item {
+    display:flex; align-items:center; gap:14px; background:#171a21; border:1px solid #23262e;
+    border-radius:12px; padding:12px 14px; margin-bottom:10px; cursor:pointer; transition:.15s;
+  }
+  .hot-item:hover { background:#1d212a; }
+  .hot-rank {
+    width:34px; height:34px; border-radius:8px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px; font-weight:800; background:#23262e; color:#7c828d;
+  }
+  .hot-item:nth-child(1) .hot-rank { background:#3a2a12; color:#ffb84d; }
+  .hot-item:nth-child(2) .hot-rank { background:#262a3a; color:#9db4ff; }
+  .hot-item:nth-child(3) .hot-rank { background:#2a1d24; color:#ff8a9a; }
+  .hot-info { flex:1; min-width:0; }
+  .hot-title { font-size:14px; color:#fff; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hot-meta { font-size:12px; color:#7c828d; margin-top:3px; }
+  .hot-views { font-size:12px; color:#ffb84d; font-weight:600; flex-shrink:0; }
+
+  /* 表单 */
+  .form-card {
+    max-width:460px; margin:20px auto; background:#171a21; border:1px solid #23262e;
+    border-radius:14px; padding:28px;
+  }
+  .form-card h3 { font-size:16px; margin-bottom:18px; color:#fff; }
+  .field { margin-bottom:14px; }
+  .field label { display:block; font-size:12px; color:#9aa0aa; margin-bottom:6px; }
+  .field input, .field textarea {
+    width:100%; background:#0f1115; border:1px solid #2d3440; color:#e6e8eb;
+    border-radius:8px; padding:10px 12px; font-size:14px; outline:none; transition:.15s;
+  }
+  .field input:focus, .field textarea:focus { border-color:#4cc2ff; }
+  .field textarea { resize:vertical; min-height:70px; }
+  .field .hint { font-size:11px; color:#5c626d; margin-top:4px; }
+  .form-msg { font-size:13px; margin-top:10px; min-height:18px; }
+  .form-msg.ok { color:#52c41a; }
+  .form-msg.err { color:#ff6b6b; }
+  .switch-link { font-size:12.5px; color:#7c828d; margin-top:12px; text-align:center; }
+  .switch-link a { color:#4cc2ff; cursor:pointer; }
+
+  /* 详情 */
+  .detail-wrap { position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100;
+    display:flex; align-items:center; justify-content:center; padding:24px; }
+  .detail-card { width:min(680px, 94vw); background:#171a21; border-radius:14px; overflow:hidden;
+    border:1px solid #23262e; }
+  .detail-player { position:relative; background:#000; aspect-ratio:16/9; }
+  .detail-player video { width:100%; height:100%; display:block; }
+  .detail-player .no-video {
+    width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,#1a2332,#0f1115); color:#7c828d; font-size:14px; gap:8px;
+  }
+  .detail-body { padding:16px 18px; }
+  .detail-title { font-size:17px; font-weight:700; color:#fff; margin-bottom:8px; }
+  .detail-meta { display:flex; align-items:center; gap:14px; font-size:13px; color:#7c828d; margin-bottom:10px; flex-wrap:wrap; }
+  .detail-desc { font-size:13.5px; color:#b8bdc6; line-height:1.7; }
+  .detail-close {
+    position:absolute; top:14px; right:14px; width:34px; height:34px; border-radius:50%;
+    background:rgba(0,0,0,0.6); color:#fff; border:none; font-size:16px; cursor:pointer; z-index:10;
+  }
+
+  /* 空状态 */
+  .empty { text-align:center; padding:60px 0; color:#5c626d; font-size:14px; }
+  .empty .big { font-size:40px; margin-bottom:10px; }
+
+  /* 加载更多 */
+  .load-more { text-align:center; padding:14px 0 6px; }
+  .load-more span { font-size:12px; color:#6B7280; }
+  .load-more .more-end { color:#8a90a0; }
+  .load-more button { background:#23262e; color:#c8ccd4; border:none; padding:10px 26px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .load-more button:hover { background:#2d3440; color:#fff; }
+  .loading { text-align:center; padding:20px; color:#5c626d; font-size:13px; }
+
+  .toast {
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:#23262e; color:#fff; font-size:13px; padding:10px 20px; border-radius:8px;
+    border:1px solid #33384a; z-index:200; opacity:0; transition:.25s; pointer-events:none;
+  }
+  .toast.show { opacity:1; }
+
+  @media (max-width:600px) {
+    .thumb { width:120px; height:68px; }
+    .card { gap:10px; padding:10px; }
+    .topbar { padding:10px 14px; gap:10px; }
+    .nav button { padding:6px 9px; font-size:13px; }
+    .logo { font-size:16px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">Video<b>Feed</b></div>
+  <nav class="nav">
+    <button data-view="discover" class="active">发现</button>
+    <button data-view="hot">热榜</button>
+    <button data-view="feed" id="nav-feed">关注流</button>
+    <button data-view="publish" id="nav-publish">发布</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="userbox" id="userbox"></div>
+</header>
+
+<main class="main" id="main"></main>
+
+<!-- 登录 / 注册模态 -->
+<div class="detail-wrap" id="auth-modal" style="display:none;">
+  <div class="detail-card" style="width:min(400px,92vw);">
+    <div class="detail-body" style="padding:28px;">
+      <div class="view-title" style="margin-bottom:16px;" id="auth-title">登录</div>
+      <div class="field"><label>用户名</label><input id="auth-username" placeholder="输入用户名"></div>
+      <div class="field"><label>密码</label><input id="auth-password" type="password" placeholder="输入密码"></div>
+      <div class="field" id="nickname-field" style="display:none;"><label>昵称（可选）</label><input id="auth-nickname" placeholder="展示昵称"></div>
+      <div class="form-msg" id="auth-msg"></div>
+      <button class="btn btn-primary" style="width:100%; padding:11px;" id="auth-submit">登录</button>
+      <div class="switch-link" id="auth-switch">没有账号？<a id="auth-switch-link">去注册</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- 视频详情 -->
+<div class="detail-wrap" id="detail-modal" style="display:none;">
+  <div class="detail-card">
+    <button class="detail-close" id="detail-close">✕</button>
+    <div class="detail-player" id="detail-player"></div>
+    <div class="detail-body" id="detail-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============ 全局状态 ============
+const TOKEN_KEY = 'vf_token';
+const USER_KEY  = 'vf_user';
+let token = localStorage.getItem(TOKEN_KEY) || '';
+let currentUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+let feedCursor = 0;   // 关注流游标（兼容旧引用）
+// B站式关注流状态：内存保留列表 + 双锚（顶部锚拉新 / 底部锚翻旧）
+let feedCache = { items: [], topTs: 0, cursor: 0, ended: false };
+let discoverCursor = 0; // 发现页游标（Redis 时间线位置，0=从头）
+let discoverEnded = false; // 发现页是否到底（无限流停止条件）
+
+// ============ 无限流：滚动到底自动加载 ============
+let scrollTicking = false; // 节流：滚动事件 200ms 内只检查一次
+function maybeLoadMore() {
+  const feedList = $('feed-list');
+  const discList = $('discover-list');
+  if (!feedList && !discList) return; // 不在列表页（热榜/发布页不触发）
+  // 接近底部（剩 300px），或内容不足一屏（无滚动条）时触发
+  const nearBottom =
+    (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 300) ||
+    (document.documentElement.scrollHeight <= window.innerHeight + 60);
+  if (!nearBottom) return;
+  if (feedList) { if (feedCache.ended) return; loadFeed(); }
+  else if (discList) { if (discoverEnded) return; loadDiscover(); }
+}
+window.addEventListener('scroll', function () {
+  if (scrollTicking) return;
+  scrollTicking = true;
+  setTimeout(function () { scrollTicking = false; maybeLoadMore(); }, 200);
+});
+
+// ============ 工具 ============
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2000);
+}
+function fmtTime(iso) {
+  const d = new Date(iso); const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+  if (diff < 86400*30) return Math.floor(diff/86400) + ' 天前';
+  return d.toLocaleDateString('zh-CN');
+}
+function fmtViews(n) {
+  if (n >= 10000) return (n/10000).toFixed(1).replace(/\.0$/,'') + ' 万';
+  if (n >= 1000) return (n/1000).toFixed(1).replace(/\.0$/,'') + ' k';
+  return n;
+}
+function fmtDur(s) {
+  if (!s) return '';
+  const m = Math.floor(s/60), sec = s%60;
+  return m + ':' + String(sec).padStart(2,'0');
+}
+
+// ============ API 封装 ============
+async function api(path, method = 'GET', body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch('/api' + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const json = await res.json().catch(() => ({ code: res.status, msg: '响应解析失败' }));
+  if (json.code !== 0) throw new Error(json.msg || '请求失败');
+  return json.data;
+}
+
+// ============ 用户 / 登录 ============
+function renderUserBox() {
+  const box = $('userbox');
+  if (currentUser) {
+    box.innerHTML =
+      '<div class="avatar">' + esc((currentUser.nickname || currentUser.username).slice(0,1)) + '</div>' +
+      '<span>' + esc(currentUser.nickname || currentUser.username) + '</span>' +
+      '<button class="btn btn-ghost" onclick="logout()">退出</button>';
+  } else {
+    box.innerHTML = '<button class="btn btn-primary" onclick="openAuth(\'login\')">登录 / 注册</button>';
+  }
+}
+
+function logout() {
+  token = ''; currentUser = null;
+  localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY);
+  renderUserBox(); showView('discover'); toast('已退出登录');
+}
+
+let authMode = 'login';
+function openAuth(mode) {
+  authMode = mode;
+  $('auth-title').textContent = mode === 'login' ? '登录' : '注册';
+  $('auth-submit').textContent = mode === 'login' ? '登录' : '注册';
+  $('nickname-field').style.display = mode === 'login' ? 'none' : 'block';
+  $('auth-msg').textContent = '';
+  $('auth-switch').innerHTML = mode === 'login' ? '没有账号？<a id="auth-switch-link">去注册</a>' : '已有账号？<a id="auth-switch-link">去登录</a>';
+  $('auth-switch-link').onclick = () => openAuth(mode === 'login' ? 'register' : 'login');
+  $('auth-modal').style.display = 'flex';
+}
+$('auth-switch-link').onclick = () => openAuth('register');
+
+$('auth-submit').onclick = async () => {
+  const username = $('auth-username').value.trim();
+  const password = $('auth-password').value;
+  const nickname = $('auth-nickname').value.trim();
+  const msg = $('auth-msg');
+  if (!username || !password) { msg.className = 'form-msg err'; msg.textContent = '用户名和密码不能为空'; return; }
+  try {
+    if (authMode === 'login') {
+      const data = await api('/users/login', 'POST', { username, password });
+      token = data.token; currentUser = data.user;
+      localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      $('auth-modal').style.display = 'none';
+      renderUserBox(); showView('discover'); toast('欢迎回来，' + (currentUser.nickname || currentUser.username));
+    } else {
+      await api('/users/register', 'POST', { username, password, nickname });
+      msg.className = 'form-msg ok'; msg.textContent = '注册成功，请登录';
+      openAuth('login');
+      $('auth-username').value = username;
+    }
+  } catch (e) {
+    msg.className = 'form-msg err'; msg.textContent = e.message;
+  }
+};
+
+// ============ 视图切换 ============
+function showView(name) {
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector('.nav button[data-view="' + name + '"]');
+  if (btn) btn.classList.add('active');
+  if ((name === 'feed' || name === 'publish') && !currentUser) {
+    toast('请先登录'); openAuth('login');
+    return;
+  }
+  renderView(name);
+}
+
+document.querySelectorAll('.nav button').forEach(b => {
+  b.onclick = () => showView(b.dataset.view);
+});
+
+// ============ 视图渲染 ============
+function renderView(name) {
+  const main = $('main');
+  if (name === 'discover') renderDiscover(main);
+  else if (name === 'hot') renderHot(main);
+  else if (name === 'feed') renderFeed(main);
+  else if (name === 'publish') renderPublish(main);
+}
+
+// ---- 发现（全站时间线，Redis 游标分页） ----
+function renderDiscover(main) {
+  discoverCursor = 0;
+  discoverEnded = false;
+  main.innerHTML = '<div class="view-title">发现<span>全站最新视频</span></div><div class="list" id="discover-list"></div><div class="load-more" id="discover-more"><span class="more-hint">加载中...</span></div>';
+  loadDiscover();
+}
+async function loadDiscover() {
+  const list = $('discover-list');
+  if (!list || list.dataset.loading) return;
+  list.dataset.loading = '1';
+  const status = $('discover-more');
+  if (status) status.innerHTML = '<span class="more-hint">加载中...</span>';
+  try {
+    const data = await api('/videos?cursor=' + discoverCursor + '&limit=6');
+    if (discoverCursor === 0 && data.list.length === 0) {
+      list.innerHTML = '<div class="empty"><div class="big">📭</div>还没有视频，去发布第一个吧</div>';
+      if (status) status.style.display = 'none';
+    } else {
+      list.insertAdjacentHTML('beforeend', data.list.map(cardHTML).join(''));
+      initFollowStates();
+      if (data.next_cursor && data.next_cursor > 0) {
+        discoverCursor = data.next_cursor; // 还有更多，记住位置
+        if (status) status.innerHTML = '<span class="more-hint">上滑加载更多</span>';
+      } else {
+        discoverEnded = true; // next_cursor=0 = 到底
+        if (status) status.innerHTML = '<span class="more-end">— 没有更多了 —</span>';
+      }
+    }
+  } catch (e) {
+    list.insertAdjacentHTML('beforeend', '<div class="empty">加载失败：' + esc(e.message) + '</div>');
+    if (status) status.innerHTML = '<span class="more-hint">加载失败，上滑重试</span>';
+  }
+  delete list.dataset.loading;
+  // 内容不足一屏时没有滚动事件，主动补一次检查
+  setTimeout(maybeLoadMore, 60);
+}
+
+// ---- 热榜 ----
+async function renderHot(main) {
+  main.innerHTML = '<div class="view-title">🔥 热榜<span>播放量驱动的实时榜单</span></div><div id="hot-list"><div class="loading">加载中...</div></div>';
+  try {
+    const list = await api('/hot?limit=10');
+    const box = $('hot-list');
+    if (!list || list.length === 0) {
+      box.innerHTML = '<div class="empty"><div class="big">🌡️</div>榜单还是空的，多看几个视频就有了</div>';
+      return;
+    }
+    box.innerHTML = list.map((v, i) =>
+      '<div class="hot-item" onclick="openDetail(' + v.id + ')">' +
+        '<div class="hot-rank">' + (i+1) + '</div>' +
+        '<div class="hot-info"><div class="hot-title">' + esc(v.title) + '</div>' +
+        '<div class="hot-meta">' + esc((v.author && (v.author.nickname || v.author.username)) || '') + ' · ' + fmtTime(v.created_at) + '</div></div>' +
+        '<div class="hot-views">▶ ' + fmtViews(v.views) + '</div>' +
+      '</div>'
+    ).join('');
+  } catch (e) {
+    $('hot-list').innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+// ---- 关注流（B站式：增量拉新插顶 + 游标翻旧追加） ----
+function renderFeed(main) {
+  main.innerHTML =
+    '<div class="view-title">关注流<span>你关注的人的最新视频</span></div>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">' +
+      '<button class="btn btn-ghost" onclick="refreshFeed()">↻ 刷新新视频</button>' +
+      '<span id="feed-hint" style="font-size:12px;color:#52C41A;"></span>' +
+    '</div>' +
+    '<div class="list" id="feed-list"></div>' +
+    '<div class="load-more" id="feed-more"><span class="more-hint">加载中...</span></div>';
+  if (feedCache.items.length > 0) {
+    // 有缓存 → 先渲染已有列表（不清空），再拉新插顶
+    $('feed-list').insertAdjacentHTML('beforeend', feedCache.items.map(cardHTML).join(''));
+    initFollowStates();
+    refreshFeed();
+    const status = $('feed-more');
+    if (feedCache.ended) { if (status) status.innerHTML = '<span class="more-end">— 没有更多了 —</span>'; }
+    setTimeout(maybeLoadMore, 60);
+  } else {
+    loadFeed(); // 首次：从头拉
+  }
+}
+
+// 拉新：刷新时只拿比顶部锚（topTs）更新的，插到列表头部（增量插顶，B站式）
+async function refreshFeed() {
+  const list = $('feed-list');
+  if (!list || list.dataset.refreshing) return;
+  list.dataset.refreshing = '1';
+  try {
+    if (feedCache.topTs <= 0) { delete list.dataset.refreshing; return; }
+    const data = await api('/feed?since=' + feedCache.topTs);
+    const fresh = data.list.filter(v => !feedCache.items.some(x => x.id === v.id));
+    if (fresh.length > 0) {
+      feedCache.items = fresh.concat(feedCache.items);   // 插到内存列表头部
+      list.insertAdjacentHTML('afterbegin', fresh.map(cardHTML).join(''));
+      initFollowStates();
+      feedCache.topTs = Date.parse(fresh[0].created_at); // 更新顶部锚（毫秒，与后端 created_ts 同基准）
+      const h = $('feed-hint'); if (h) h.textContent = '拉到 ' + fresh.length + ' 条新视频 ↑';
+      setTimeout(() => { const h2 = $('feed-hint'); if (h2) h2.textContent = ''; }, 2500);
+    }
+  } catch (e) { /* 拉新失败不打断浏览 */ }
+  delete list.dataset.refreshing;
+}
+
+// 翻旧：带底部锚（cursor）加载更老的，追加到列表尾部
+async function loadFeed() {
+  const list = $('feed-list');
+  if (!list || list.dataset.loading) return;
+  list.dataset.loading = '1';
+  const status = $('feed-more');
+  if (status) status.innerHTML = '<span class="more-hint">加载中...</span>';
+  try {
+    const q = feedCache.cursor > 0 ? '?cursor=' + feedCache.cursor : '';
+    const data = await api('/feed' + q);
+    if (feedCache.items.length === 0 && data.list.length === 0) {
+      list.innerHTML = '<div class="empty"><div class="big">👣</div>你还没有关注任何人<br><span style="font-size:12px;">去"发现"页关注几个作者，这里就会出现他们的视频</span></div>';
+      if (status) status.style.display = 'none';
+      delete list.dataset.loading; return;
+    }
+    const fresh = data.list.filter(v => !feedCache.items.some(x => x.id === v.id));
+    if (fresh.length > 0) {
+      feedCache.items = feedCache.items.concat(fresh);   // 追加到内存列表尾部
+      list.insertAdjacentHTML('beforeend', fresh.map(cardHTML).join(''));
+      initFollowStates();
+    }
+    if (feedCache.topTs === 0 && fresh.length > 0) {
+      feedCache.topTs = Date.parse(fresh[0].created_at); // 首次：设顶部锚（毫秒）
+    }
+    feedCache.cursor = data.next_cursor || 0;            // 更新底部锚
+    if (data.list.length < 10) {
+      feedCache.ended = true;                            // 到底：无限流停止
+      if (status) status.innerHTML = '<span class="more-end">— 没有更多了 —</span>';
+    } else if (status) {
+      status.innerHTML = '<span class="more-hint">上滑加载更多</span>';
+    }
+  } catch (e) { list.insertAdjacentHTML('beforeend', '<div class="empty">加载失败：' + esc(e.message) + '</div>'); }
+  delete list.dataset.loading;
+  // 内容不足一屏时没有滚动事件，主动补一次检查
+  setTimeout(maybeLoadMore, 60);
+}
+
+// ---- 发布 ----
+function renderPublish(main) {
+  main.innerHTML =
+    '<div class="form-card">' +
+      '<h3>发布新视频</h3>' +
+      '<div class="field"><label>标题 *</label><input id="pub-title" placeholder="视频标题"></div>' +
+      '<div class="field"><label>描述</label><textarea id="pub-desc" placeholder="简单介绍一下"></textarea></div>' +
+      '<div class="field"><label>视频地址 *</label><input id="pub-url" placeholder="https://... 视频文件直链（mp4）">' +
+      '<div class="hint">骨架阶段先填视频文件 URL；后续会升级为真正的文件上传</div></div>' +
+      '<div class="field"><label>封面地址</label><input id="pub-cover" placeholder="https://... 封面图（可选）"></div>' +
+      '<div class="field"><label>时长（秒）</label><input id="pub-dur" type="number" placeholder="如 15"></div>' +
+      '<div class="form-msg" id="pub-msg"></div>' +
+      '<button class="btn btn-primary" style="width:100%;padding:11px;" onclick="doPublish()">发布</button>' +
+    '</div>';
+}
+async function doPublish() {
+  const msg = $('pub-msg');
+  const title = $('pub-title').value.trim();
+  const url = $('pub-url').value.trim();
+  if (!title || !url) { msg.className = 'form-msg err'; msg.textContent = '标题和视频地址必填'; return; }
+  msg.textContent = '发布中...';
+  try {
+    await api('/videos', 'POST', {
+      title,
+      description: $('pub-desc').value.trim(),
+      video_url: url,
+      cover_url: $('pub-cover').value.trim(),
+      duration: parseInt($('pub-dur').value) || 0
+    });
+    msg.className = 'form-msg ok'; msg.textContent = '发布成功！';
+    toast('发布成功 🎉');
+    setTimeout(() => showView('discover'), 800);
+  } catch (e) {
+    msg.className = 'form-msg err'; msg.textContent = e.message;
+  }
+}
+
+// ============ 视频卡片 ============
+function cardHTML(v) {
+  const authorName = (v.author && (v.author.nickname || v.author.username)) || '未知作者';
+  const cover = v.cover_url
+    ? '<img src="' + esc(v.cover_url) + '" onerror="this.outerHTML=\'<div class=placeholder>▶</div>\'">'
+    : '<div class="placeholder">▶</div>';
+  const followBtn = (currentUser && v.author && v.author.id !== currentUser.id)
+    ? '<button class="follow-btn" data-aid="' + v.author.id + '" title="关注该作者" onclick="event.stopPropagation();toggleFollow(this)">关注</button>'
+    : '';
+  return (
+    '<div class="card" onclick="openDetail(' + v.id + ')">' +
+      '<div class="thumb">' + cover + (v.duration ? '<div class="dur">' + fmtDur(v.duration) + '</div>' : '') + '</div>' +
+      '<div class="card-body">' +
+        '<div class="card-title">' + esc(v.title) + '</div>' +
+        (v.description ? '<div class="desc">' + esc(v.description) + '</div>' : '') +
+        '<div class="card-meta">' +
+          '<span class="author"><span class="mini-avatar">' + esc(authorName.slice(0,1)) + '</span>' + esc(authorName) + followBtn + '</span>' +
+          '<span>▶ ' + fmtViews(v.views) + '</span>' +
+          '<span>' + fmtTime(v.created_at) + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+// 初始化卡片上所有关注按钮的已关注状态（刷新后不丢状态）
+// 逐个调 is_following 查询——骨架阶段视频量小够用；
+// 数据量大时应让后端在列表接口里批量带 is_followed 字段（避免 N 次请求）
+async function initFollowStates() {
+  if (!currentUser) return;
+  const aids = [...new Set([...document.querySelectorAll('.follow-btn')].map(b => b.dataset.aid))];
+  for (const aid of aids) {
+    try {
+      const ok = await api('/is_following/' + aid);
+      document.querySelectorAll('.follow-btn[data-aid="' + aid + '"]').forEach(b => {
+        if (ok) { b.classList.add('done'); b.textContent = '已关注'; }
+      });
+    } catch (e) { /* 未登录等场景静默跳过 */ }
+  }
+}
+
+// 关注 / 取消关注（toggle，和 Go 后端一样靠唯一索引）
+async function toggleFollow(btn) {
+  if (!currentUser) { openAuth('login'); return; }
+  const aid = btn.dataset.aid;
+  const wasDone = btn.classList.contains('done');
+  btn.textContent = '...';
+  try {
+    const msg = await api('/follow/' + aid, 'POST');
+    const isCancel = msg && msg.indexOf('取消') >= 0;
+    btn.classList.toggle('done');
+    btn.textContent = btn.classList.contains('done') ? '已关注' : '关注';
+    toast(msg);
+  } catch (e) {
+    btn.textContent = wasDone ? '已关注' : '关注';
+    toast(e.message);
+  }
+}
+
+// ============ 视频详情 ============
+async function openDetail(id) {
+  const modal = $('detail-modal');
+  modal.style.display = 'flex';
+  $('detail-player').innerHTML = '<div class="loading">加载中...</div>';
+  $('detail-body').innerHTML = '';
+  try {
+    const v = await api('/videos/' + id);
+    let playerHTML;
+    if (v.video_url) {
+      playerHTML =
+        '<video controls autoplay playsinline>' +
+          '<source src="' + esc(v.video_url) + '" type="video/mp4">' +
+          '浏览器不支持视频播放' +
+        '</video>';
+    } else {
+      playerHTML = '<div class="no-video"><div style="font-size:34px;">🎞️</div>该视频暂无播放地址</div>';
+    }
+    $('detail-player').innerHTML = playerHTML;
+
+    const authorName = (v.author && (v.author.nickname || v.author.username)) || '未知作者';
+    $('detail-body').innerHTML =
+      '<div class="detail-title">' + esc(v.title) + '</div>' +
+      '<div class="detail-meta">' +
+        '<span class="author"><span class="mini-avatar">' + esc(authorName.slice(0,1)) + '</span>' + esc(authorName) + '</span>' +
+        '<span>▶ ' + fmtViews(v.views) + '</span>' +
+        '<span>' + fmtTime(v.created_at) + '</span>' +
+        '<span>❤ ' + fmtViews(v.likes_count) + '</span>' +
+        (currentUser && v.author && v.author.id !== currentUser.id
+          ? '<button class="btn btn-ghost" style="font-size:12px;padding:4px 12px;" onclick="event.stopPropagation();toggleFollowFromDetail(' + v.author.id + ', this)">关注</button>'
+          : '') +
+      '</div>' +
+      (v.description ? '<div class="detail-desc">' + esc(v.description) + '</div>' : '');
+
+    // 初始化详情页关注按钮的已关注状态
+    const dFollowBtn = $('detail-body').querySelector('.btn-ghost');
+    if (dFollowBtn) {
+      try {
+        const ok = await api('/is_following/' + v.author.id);
+        if (ok) { dFollowBtn.textContent = '已关注'; }
+      } catch (e) {}
+    }
+
+    const vid = $('detail-player').querySelector('video');
+    if (vid) {
+      vid.onerror = () => {
+        $('detail-player').innerHTML = '<div class="no-video"><div style="font-size:34px;">🚫</div>视频文件无法播放（URL 可能无效）<div style="font-size:12px;">' + esc(v.video_url || '') + '</div></div>';
+      };
+    }
+  } catch (e) {
+    $('detail-player').innerHTML = '<div class="no-video"><div style="font-size:34px;">😵</div>' + esc(e.message) + '</div>';
+  }
+}
+async function toggleFollowFromDetail(aid, btn) {
+  btn.textContent = '...';
+  try {
+    const msg = await api('/follow/' + aid, 'POST');
+    btn.textContent = (msg && msg.indexOf('取消') >= 0) ? '已关注' : '关注';
+    toast(msg);
+  } catch (e) { toast(e.message); }
+}
+$('detail-close').onclick = () => {
+  const v = $('detail-player').querySelector('video');
+  if (v) v.pause();
+  $('detail-modal').style.display = 'none';
+};
+$('detail-modal').onclick = (e) => {
+  if (e.target === $('detail-modal')) {
+    const v = $('detail-player').querySelector('video');
+    if (v) v.pause();
+    $('detail-modal').style.display = 'none';
+  }
+};
+
+// ============ 启动 ============
+renderUserBox();
+showView('discover');
+</script>
+</body>
+</html>
