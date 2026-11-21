@@ -30,7 +30,10 @@ func GetHotVideos(c *gin.Context) {
 	v, _, _ := hotSF.Do(fmt.Sprintf("hot:%d", n), func() (interface{}, error) {
 		return loadHotVideos(ids), nil
 	})
-	ranked := v.([]models.Video)
+	// 拷贝一份再回填 liked：hotSF 的结果会被同 key 的并发请求共享，
+	// liked 是"每个请求的用户各自不同"的字段，直接在共享切片上写会串数据。
+	ranked := append([]models.Video(nil), v.([]models.Video)...)
+	fillLikedStatus(c, ranked)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": ranked})
 }

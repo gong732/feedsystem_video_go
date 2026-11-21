@@ -43,6 +43,16 @@ func RegisterRoutes(r *gin.Engine) {
 	api.GET("/videos/:id", middleware.AuthOptional(), handlers.GetVideoDetail)
 	api.POST("/videos", middleware.Auth(), handlers.CreateVideo)
 
+	// ---- 点赞：toggle 与状态查询 ----
+	// 写操作必须登录（知道"谁"点了赞）；读状态挂软鉴权，未登录也能看总数
+	api.POST("/videos/:id/like", middleware.Auth(), handlers.ToggleLike)
+	api.GET("/videos/:id/like", middleware.AuthOptional(), handlers.GetLikeStatus)
+
+	// ---- 评论：发布/删除需要登录，列表公开 + 软鉴权 ----
+	api.POST("/videos/:id/comments", middleware.Auth(), handlers.CreateComment)
+	api.GET("/videos/:id/comments", middleware.AuthOptional(), handlers.ListComments)
+	api.DELETE("/comments/:id", middleware.Auth(), handlers.DeleteComment)
+
 	// ---- Feed 时间线：需要登录（知道你是谁才知道关注了谁）----
 	api.GET("/feed", middleware.Auth(), handlers.GetFeed)
 

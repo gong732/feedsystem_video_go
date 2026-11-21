@@ -21,7 +21,8 @@ func InitMySQL(cfg *config.MySQLConfig) error {
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info), // 打印 SQL，学习期开着
+		Logger:         logger.Default.LogMode(logger.Info), // 打印 SQL，学习期开着
+		TranslateError: true,                                // 把 MySQL 1062 翻译成 gorm.ErrDuplicatedKey
 	})
 	if err != nil {
 		return fmt.Errorf("连接 MySQL 失败: %w", err)
@@ -30,12 +31,13 @@ func InitMySQL(cfg *config.MySQLConfig) error {
 	DB = db
 	log.Println("✅ MySQL 连接成功:", cfg.DBName)
 
-	// 自动建表（骨架阶段：users / follows / videos / likes）
+	// 自动建表（users / follows / videos / likes / comments）
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Follow{},
 		&models.Video{},
 		&models.Like{},
+		&models.Comment{},
 	); err != nil {
 		return fmt.Errorf("自动建表失败: %w", err)
 	}
