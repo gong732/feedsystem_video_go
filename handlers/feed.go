@@ -59,7 +59,9 @@ func GetFeed(c *gin.Context) {
 		fillVideoAuthors(&videos)
 		nextCursor := int64(0)
 		if len(videos) > 0 {
-			nextCursor = videos[len(videos)-1].CreatedAt.Unix()
+			// 必须用毫秒级 CreatedTs：全链路的 since/cursor/冷区边界都是毫秒整数。
+			// 用 CreatedAt.Unix() 会退化成整秒，导致秒内发布的视频被反复"拉新"（重复刷到）。
+			nextCursor = videos[len(videos)-1].CreatedTs
 		}
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": videos, "next_cursor": nextCursor}})
 		return
