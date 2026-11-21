@@ -129,8 +129,8 @@
   /* 详情 */
   .detail-wrap { position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100;
     display:flex; align-items:center; justify-content:center; padding:24px; }
-  .detail-card { width:min(680px, 94vw); background:#171a21; border-radius:14px; overflow:hidden;
-    border:1px solid #23262e; }
+  .detail-card { width:min(680px, 94vw); background:#171a21; border-radius:14px; overflow-y:auto;
+    max-height:88vh; border:1px solid #23262e; }
   .detail-player { position:relative; background:#000; aspect-ratio:16/9; }
   .detail-player video { width:100%; height:100%; display:block; }
   .detail-player .no-video {
@@ -145,6 +145,32 @@
     position:absolute; top:14px; right:14px; width:34px; height:34px; border-radius:50%;
     background:rgba(0,0,0,0.6); color:#fff; border:none; font-size:16px; cursor:pointer; z-index:10;
   }
+
+  /* 点赞 / 评论区 */
+  .like-btn {
+    background:transparent; border:none; cursor:pointer; font-size:12px;
+    color:#7c828d; padding:0; transition:.15s;
+  }
+  .like-btn:hover { color:#ff8fa3; }
+  .like-btn.liked { color:#ff6b81; font-weight:600; }
+  .comments { margin-top:14px; border-top:1px solid #23262e; padding-top:14px; }
+  .comments-head { font-size:13px; color:#c8ccd4; margin-bottom:8px; font-weight:600; }
+  .cm-item { display:flex; gap:9px; padding:9px 0; border-bottom:1px solid #1d212a; }
+  .cm-main { flex:1; min-width:0; }
+  .cm-top { display:flex; align-items:center; gap:8px; font-size:11.5px; color:#7c828d; }
+  .cm-name { color:#c8ccd4; font-weight:600; }
+  .cm-del { margin-left:auto; background:none; border:none; color:#5c626d; font-size:11px; cursor:pointer; }
+  .cm-del:hover { color:#ff6b6b; }
+  .cm-text { font-size:13px; color:#e6e8eb; line-height:1.6; margin-top:3px; word-break:break-word; white-space:pre-wrap; }
+  .cm-empty { color:#5c626d; font-size:12.5px; padding:10px 0; }
+  .cm-form { display:flex; gap:8px; margin-top:12px; }
+  .cm-form input {
+    flex:1; background:#0f1115; border:1px solid #2d3440; color:#e6e8eb;
+    border-radius:8px; padding:9px 12px; font-size:13px; outline:none;
+  }
+  .cm-form input:focus { border-color:#4cc2ff; }
+  .cm-more { text-align:center; padding:8px 0 2px; }
+  .cm-more button { background:none; border:none; color:#4cc2ff; font-size:12px; cursor:pointer; }
 
   /* 空状态 */
   .empty { text-align:center; padding:60px 0; color:#5c626d; font-size:14px; }
@@ -566,6 +592,9 @@ function cardHTML(v) {
         '<div class="card-meta">' +
           '<span class="author"><span class="mini-avatar">' + esc(authorName.slice(0,1)) + '</span>' + esc(authorName) + followBtn + '</span>' +
           '<span>▶ ' + fmtViews(v.views) + '</span>' +
+          '<button class="like-btn' + (v.liked ? ' liked' : '') + '" data-vid="' + v.id + '"' +
+            ' onclick="event.stopPropagation();toggleLike(' + v.id + ', this)">' +
+            (v.liked ? '❤' : '♡') + ' ' + (v.likes_count || 0) + '</button>' +
           '<span>' + fmtTime(v.created_at) + '</span>' +
         '</div>' +
       '</div>' +
@@ -634,12 +663,23 @@ async function openDetail(id) {
         '<span class="author"><span class="mini-avatar">' + esc(authorName.slice(0,1)) + '</span>' + esc(authorName) + '</span>' +
         '<span>▶ ' + fmtViews(v.views) + '</span>' +
         '<span>' + fmtTime(v.created_at) + '</span>' +
-        '<span>❤ ' + fmtViews(v.likes_count) + '</span>' +
+        '<button class="like-btn' + (v.liked ? ' liked' : '') + '" data-vid="' + v.id + '" id="like-btn"' +
+          ' onclick="toggleLike(' + v.id + ', this)">' +
+          (v.liked ? '❤' : '♡') + ' <span id="like-count">' + (v.likes_count || 0) + '</span></button>' +
         (currentUser && v.author && v.author.id !== currentUser.id
           ? '<button class="btn btn-ghost" style="font-size:12px;padding:4px 12px;" onclick="event.stopPropagation();toggleFollowFromDetail(' + v.author.id + ', this)">关注</button>'
           : '') +
       '</div>' +
-      (v.description ? '<div class="detail-desc">' + esc(v.description) + '</div>' : '');
+      (v.description ? '<div class="detail-desc">' + esc(v.description) + '</div>' : '') +
+      '<div class="comments">' +
+        '<div class="comments-head">评论 <span id="cm-total">' + (v.comments_count || 0) + '</span></div>' +
+        '<div id="cm-list"><div class="loading">加载中...</div></div>' +
+        '<div class="cm-more" id="cm-more"></div>' +
+        '<div class="cm-form">' +
+          '<input id="cm-input" maxlength="500" placeholder="' + (currentUser ? '说点什么…（最多 500 字）' : '登录后才能评论') + '"' + (currentUser ? '' : ' disabled') + '>' +
+          '<button class="btn btn-primary" onclick="submitComment(' + v.id + ')"' + (currentUser ? '' : ' disabled') + '>发送</button>' +
+        '</div>' +
+      '</div>';
 
     // 初始化详情页关注按钮的已关注状态
     const dFollowBtn = $('detail-body').querySelector('.btn-ghost');
@@ -649,6 +689,9 @@ async function openDetail(id) {
         if (ok) { dFollowBtn.textContent = '已关注'; }
       } catch (e) {}
     }
+
+    // 评论列表：首屏取最新 10 条
+    await loadComments(v.id, 0, true);
 
     const vid = $('detail-player').querySelector('video');
     if (vid) {
@@ -668,6 +711,111 @@ async function toggleFollowFromDetail(aid, btn) {
     toast(msg);
   } catch (e) { toast(e.message); }
 }
+// ============ 点赞 ============
+// 点赞是 toggle：同一个按钮点一次赞、再点一次取消。
+// 后端返回最新的 liked / likes_count，前端直接以服务端结果为准（不在本地猜）。
+async function toggleLike(videoId, btn) {
+  if (!currentUser) { openAuth('login'); return; }
+  btn.disabled = true;
+  try {
+    const data = await api('/videos/' + videoId + '/like', 'POST');
+    // 同步所有这个视频的点赞按钮（卡片上的 + 详情里的）
+    document.querySelectorAll('.like-btn[data-vid="' + videoId + '"]').forEach(b => {
+      b.classList.toggle('liked', data.liked);
+      if (b.id === 'like-btn') {
+        b.innerHTML = (data.liked ? '❤' : '♡') + ' <span id="like-count">' + data.likes_count + '</span>';
+      } else {
+        b.innerHTML = (data.liked ? '❤' : '♡') + ' ' + data.likes_count;
+      }
+    });
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ============ 评论 ============
+let commentCursor = 0;
+
+function commentHTML(videoId, cm) {
+  const name = (cm.author && (cm.author.nickname || cm.author.username)) || '用户';
+  const canDel = currentUser && cm.user_id === currentUser.id;
+  return '<div class="cm-item">' +
+    '<span class="mini-avatar">' + esc(name.slice(0, 1)) + '</span>' +
+    '<div class="cm-main">' +
+      '<div class="cm-top">' +
+        '<span class="cm-name">' + esc(name) + '</span>' +
+        '<span>' + fmtTime(cm.created_at) + '</span>' +
+        (canDel ? '<button class="cm-del" onclick="deleteComment(' + videoId + ',' + cm.id + ')">删除</button>' : '') +
+      '</div>' +
+      '<div class="cm-text">' + esc(cm.content) + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+// reset=true 表示首屏/重新拉取；否则是"加载更多"续接
+async function loadComments(videoId, cursor, reset) {
+  const box = $('cm-list');
+  if (!box) return;
+  if (reset) {
+    commentCursor = 0;
+    box.innerHTML = '<div class="loading">加载中...</div>';
+    const more = $('cm-more'); if (more) more.innerHTML = '';
+  }
+  try {
+    const data = await api('/videos/' + videoId + '/comments?cursor=' + cursor + '&limit=10');
+    const items = data.list || [];
+    if (reset) box.innerHTML = '';
+    if (!items.length && reset) {
+      box.innerHTML = '<div class="cm-empty">还没有评论，来抢沙发</div>';
+    }
+    box.insertAdjacentHTML('beforeend', items.map(cm => commentHTML(videoId, cm)).join(''));
+
+    commentCursor = data.next_cursor || 0;
+    const more = $('cm-more');
+    if (more) {
+      more.innerHTML = commentCursor
+        ? '<button onclick="loadComments(' + videoId + ', ' + commentCursor + ', false)">加载更多评论</button>'
+        : '';
+    }
+  } catch (e) {
+    if (reset) box.innerHTML = '<div class="cm-empty">评论加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+async function submitComment(videoId) {
+  if (!currentUser) { openAuth('login'); return; }
+  const input = $('cm-input');
+  const content = (input.value || '').trim();
+  if (!content) { toast('评论不能为空'); return; }
+  try {
+    await api('/videos/' + videoId + '/comments', 'POST', { content });
+    input.value = '';
+    const total = $('cm-total');
+    if (total) total.textContent = (parseInt(total.textContent) || 0) + 1;
+    toast('评论成功');
+    await loadComments(videoId, 0, true); // 重新拉第一页，保证顺序正确
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function deleteComment(videoId, commentId) {
+  if (!confirm('确定删除这条评论吗？')) return;
+  try {
+    await api('/comments/' + commentId, 'DELETE');
+    const total = $('cm-total');
+    if (total) total.textContent = Math.max(0, (parseInt(total.textContent) || 0) - 1);
+    toast('已删除');
+    await loadComments(videoId, 0, true);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+
+// 点遮罩和关闭按钮都要暂停视频（否则弹层关了声音还在放）
 $('detail-close').onclick = () => {
   const v = $('detail-player').querySelector('video');
   if (v) v.pause();

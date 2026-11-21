@@ -57,6 +57,7 @@ func GetFeed(c *gin.Context) {
 	if since > 0 {
 		videos := fetchNewVideos(me, followIDs, since, int64(limit))
 		fillVideoAuthors(&videos)
+		fillLikedStatus(c, videos)
 		nextCursor := int64(0)
 		if len(videos) > 0 {
 			// 必须用毫秒级 CreatedTs：全链路的 since/cursor/冷区边界都是毫秒整数。
@@ -152,7 +153,9 @@ func GetFeed(c *gin.Context) {
 			query.Order("created_ts DESC").Limit(need).Find(&list)
 			return list, nil
 		})
-		coldVideos = v.([]models.Video)
+		// 必须拷贝：singleflight 返回的切片会被同 key 的并发请求共享，
+		// 后面 fillLikedStatus 要按"当前请求的用户"写 Liked 字段，直接改共享底层数组会数据竞争。
+		coldVideos = append([]models.Video(nil), v.([]models.Video)...)
 
 		hotVideos = append(hotVideos, coldVideos...)
 	}
@@ -164,6 +167,7 @@ func GetFeed(c *gin.Context) {
 	}
 
 	fillVideoAuthors(&hotVideos)
+	fillLikedStatus(c, hotVideos)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
 		"list":        hotVideos,
 		"next_cursor": nextCursor, // 前端下次请求把它当 cursor 传回来
