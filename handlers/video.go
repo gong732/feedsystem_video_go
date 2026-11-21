@@ -62,8 +62,8 @@ func CreateVideo(c *gin.Context) {
 
 // GetVideoList 发现页（全站时间线）：Redis ZSet 游标翻页 + MySQL 回表补详情
 // 替代原 OFFSET 页码分页的原因：
-//   1. OFFSET 越大越慢（要扫掉前 N 行）；游标走索引 O(log N)
-//   2. 新视频插入导致页码分页"页间重复/漏掉"；游标以绝对时间为锚，稳定不重不漏
+//  1. OFFSET 越大越慢（要扫掉前 N 行）；游标走索引 O(log N)
+//  2. 新视频插入导致页码分页"页间重复/漏掉"；游标以绝对时间为锚，稳定不重不漏
 func GetVideoList(c *gin.Context) {
 	cursor, _ := strconv.ParseInt(c.DefaultQuery("cursor", "0"), 10, 64)
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "6"))
@@ -97,17 +97,20 @@ func GetVideoList(c *gin.Context) {
 	}
 
 	fillVideoAuthors(&videos)
+	fillLikedStatus(c, videos) // 批量回填"我点没点过赞"（一次 IN 查询）
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
-		"list":       videos,
+		"list":        videos,
 		"next_cursor": nextCursor,
 	}})
 }
 
 // GetVideoDetail 视频详情 —— 缓存三件套落地样板：
-//   ① 读缓存：video:info:{id}（JSON，不含播放量）
-//   ② 防击穿：缓存过期瞬间并发 → singleflight 只放一个查 DB，回填缓存
-//   ③ 防雪崩：回填 TTL = 300s + 随机 0~60s，避免大批 key 同时过期
-//   ④ 防穿透：DB 也不存在 → 缓存空值 video:null:{id}（短 TTL），攻击者循环查不存在的 id 也打不到 DB
+//
+//	① 读缓存：video:info:{id}（JSON，不含播放量）
+//	② 防击穿：缓存过期瞬间并发 → singleflight 只放一个查 DB，回填缓存
+//	③ 防雪崩：回填 TTL = 300s + 随机 0~60s，避免大批 key 同时过期
+//	④ 防穿透：DB 也不存在 → 缓存空值 video:null:{id}（短 TTL），攻击者循环查不存在的 id 也打不到 DB
+//
 // 播放量是高频写（每次访问自增），不进缓存：返回时实时从热榜 ZSet 取（GetHotScore）
 func GetVideoDetail(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -128,6 +131,9 @@ func GetVideoDetail(c *gin.Context) {
 			database.DB.Model(&video).UpdateColumn("views", gorm.Expr("views + 1"))
 			database.IncrHotScore(uid)
 			video.Views++
+			// liked 是"和谁在看"绑定的，缓存里存的是上一次请求者的状态，
+			// 所以每次命中缓存都要用当前用户重新覆盖，不能直接信任缓存值。
+			video.Liked = userLiked(c.GetUint("user_id"), uid)
 			c.JSON(http.StatusOK, gin.H{"code": 0, "data": video})
 			return
 		}
@@ -164,6 +170,7 @@ func GetVideoDetail(c *gin.Context) {
 	}
 	// 值拷贝：singleflight 返回共享指针，不能互相改 Views
 	video := *shared.(*models.Video)
+	video.Liked = userLiked(c.GetUint("user_id"), uid)
 
 	// 播放量：实时从热榜取 + 自增
 	video.Views = database.GetHotScore(uid)
