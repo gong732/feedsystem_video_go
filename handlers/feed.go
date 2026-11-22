@@ -13,14 +13,15 @@ import (
 // GetFeed 关注时间线 —— Feed 流核心：游标翻旧 + 增量拉新（B站式）
 //
 // 三种模式（由参数决定，互斥）：
-//   1. since > 0  → 拉新：只取比 since 更新的视频（前端刷新时插到列表顶部）
-//   2. cursor > 0 → 翻旧：只取比 cursor 更老的视频（下滑加载更多）
-//   3. 都不传      → 首次：从头拉最新一批
+//  1. since > 0  → 拉新：只取比 since 更新的视频（前端刷新时插到列表顶部）
+//  2. cursor > 0 → 翻旧：只取比 cursor 更老的视频（下滑加载更多）
+//  3. 都不传      → 首次：从头拉最新一批
 //
 // 第二阶段升级为"推拉结合 + 冷热分离"：
-//   热数据：发布时写扩散到粉丝的 Redis ZSet（feed:hot:{uid}），最新 200 条
-//   冷数据：翻过热区后回源 MySQL（拉模式）
-//   读取：先查热区 ZSet（快，不打 MySQL），不足再回源冷区（singleflight 防击穿）
+//
+//	热数据：发布时写扩散到粉丝的 Redis ZSet（feed:hot:{uid}），最新 200 条
+//	冷数据：翻过热区后回源 MySQL（拉模式）
+//	读取：先查热区 ZSet（快，不打 MySQL），不足再回源冷区（singleflight 防击穿）
 func GetFeed(c *gin.Context) {
 	me := c.GetUint("user_id")
 
@@ -49,8 +50,12 @@ func GetFeed(c *gin.Context) {
 		return
 	}
 	followIDs := make([]uint, 0, len(follows))
+	// 关注集合：热区回表后过滤"取关残留"时用 O(1) 查找，
+	// 避免对每条视频都线性扫一遍 followIDs（200 × 500 = 10 万次比较）。
+	followSet := make(map[uint]struct{}, len(follows))
 	for _, f := range follows {
 		followIDs = append(followIDs, f.FollowUserID)
+		followSet[f.FollowUserID] = struct{}{}
 	}
 
 	// 2. 拉新模式：刷新时增量插顶（B站式）
@@ -103,7 +108,7 @@ func GetFeed(c *gin.Context) {
 			// 过滤取关残留（取关后热区可能还留着旧作者视频）+ 按时间倒序
 			hotOrdered := make([]models.Video, 0, len(hotVideosRaw))
 			for _, v := range hotVideosRaw {
-				if !containsUint(followIDs, v.UserID) {
+				if _, ok := followSet[v.UserID]; !ok {
 					continue
 				}
 				hotOrdered = append(hotOrdered, v)
@@ -181,6 +186,11 @@ func fetchNewVideos(me uint, followIDs []uint, since, limit int64) []models.Vide
 	result := make([]models.Video, 0, limit)
 	excluded := make([]uint, 0)
 
+	followSet := make(map[uint]struct{}, len(followIDs))
+	for _, id := range followIDs {
+		followSet[id] = struct{}{}
+	}
+
 	// 热区：只留比 since 新的（Redis 全取 ≤200 条后过滤，量小够用）
 	hotMembers := database.GetFeedHot(me)
 	candIDs := make([]uint, 0, len(hotMembers))
@@ -197,7 +207,7 @@ func fetchNewVideos(me uint, followIDs []uint, since, limit int64) []models.Vide
 		var raws []models.Video
 		database.DB.Where("id IN ? AND status = ?", candIDs, 1).Find(&raws)
 		for _, v := range raws {
-			if containsUint(followIDs, v.UserID) {
+			if _, ok := followSet[v.UserID]; ok {
 				result = append(result, v)
 				excluded = append(excluded, v.ID)
 			}
@@ -240,14 +250,4 @@ func sortByTs(videos []models.Video, tsMap map[uint]int64) {
 			}
 		}
 	}
-}
-
-// containsUint 判断切片是否包含某元素（关注列表过滤用）
-func containsUint(list []uint, v uint) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

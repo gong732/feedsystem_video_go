@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"log"
+	"os"
+	"strconv"
+)
 
 // Config 全局配置，从环境变量加载，未设置时使用本地开发默认值
 type Config struct {
@@ -60,7 +64,7 @@ func Load() *Config {
 		},
 		JWT: JWTConfig{
 			Secret: getEnv("VIDEO_JWT_SECRET", "video-feed-secret"),
-			Expire: 24,
+			Expire: getEnvInt("VIDEO_JWT_EXPIRE_HOURS", 24),
 		},
 		LLM: LLMConfig{
 			BaseURL: getEnv("VIDEO_LLM_BASE_URL", "https://api.deepseek.com/v1"),
@@ -76,4 +80,18 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// getEnvInt 读取整型环境变量，未设置或格式非法时返回默认值
+func getEnvInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Printf("[config] %s=%q 不是合法整数，回退默认值 %d", key, v, def)
+		return def
+	}
+	return n
 }

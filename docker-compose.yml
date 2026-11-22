@@ -41,6 +41,8 @@ services:
       VIDEO_REDIS_HOST: redis
       VIDEO_REDIS_PORT: "6379"
       VIDEO_SERVER_PORT: "8081"
+      # JWT 过期小时数：默认 24，可在宿主机 .env 里覆盖（如 VIDEO_JWT_EXPIRE_HOURS=72）
+      VIDEO_JWT_EXPIRE_HOURS: "${VIDEO_JWT_EXPIRE_HOURS:-24}"
       TZ: Asia/Shanghai
     ports:
       - "8081:8081"                # 前端入口
