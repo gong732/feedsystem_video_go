@@ -38,10 +38,15 @@ func RegisterRoutes(r *gin.Engine) {
 	follow.GET("/followers/:user_id", handlers.FollowerList)
 	follow.GET("/is_following/:user_id", handlers.IsFollowing)
 
-	// ---- 视频：浏览公开，但挂软鉴权（登录了就能带上身份，为第三批 AI 个性化铺路）----
+	// ---- 视频：浏览公开，但挂软鉴权 ----
 	api.GET("/videos", middleware.AuthOptional(), handlers.GetVideoList)
 	api.GET("/videos/:id", middleware.AuthOptional(), handlers.GetVideoDetail)
 	api.POST("/videos", middleware.Auth(), handlers.CreateVideo)
+
+	// ---- 文件上传：先拿 URL，再带着 URL 调 POST /videos 发布 ----
+	// 落盘到 ./static/uploads/...，由上面的 r.Static("/static", "./static") 直接对外提供
+	api.POST("/upload/video", middleware.Auth(), handlers.UploadVideo)
+	api.POST("/upload/cover", middleware.Auth(), handlers.UploadCover)
 
 	// ---- 点赞：toggle 与状态查询 ----
 	// 写操作必须登录（知道"谁"点了赞）；读状态挂软鉴权，未登录也能看总数
