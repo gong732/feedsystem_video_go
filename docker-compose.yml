@@ -44,6 +44,10 @@ services:
       TZ: Asia/Shanghai
     ports:
       - "8081:8081"                # 前端入口
+    volumes:
+      # 把宿主 static 目录挂进容器：上传的文件落在宿主 D:\go_project\video-feed\static，
+      # 容器重建不丢；本地下载的旧视频也不用重新 COPY 进镜像
+      - ./static:/app/static
     depends_on:
       mysql:
         condition: service_healthy # 等 MySQL 健康了再启动
