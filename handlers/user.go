@@ -70,7 +70,7 @@ func Login(c *gin.Context) {
 		return
 	}
 	cfg := config.Load()
-	token, _ := utils.GenerateToken(&cfg.JWT, user.ID, user.Username)
+	token, _ := utils.GenerateToken(&cfg.JWT, user.ID)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "登录成功", "data": gin.H{
 		"token": token,
 		"user":  user,
@@ -89,12 +89,12 @@ func GetUserInfo(c *gin.Context) {
 	database.DB.Model(&models.Follow{}).Where("user_id = ?", user.ID).Count(&following)
 	database.DB.Model(&models.Follow{}).Where("follow_user_id = ?", user.ID).Count(&followers)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
-		"id":        user.ID,
-		"username":  user.Username,
-		"nickname":  user.Nickname,
-		"avatar":    user.Avatar,
-		"following": following,
-		"followers": followers,
+		"id":         user.ID,
+		"username":   user.Username,
+		"nickname":   user.Nickname,
+		"avatar":     user.Avatar,
+		"following":  following,
+		"followers":  followers,
 		"created_at": user.CreatedAt,
 	}})
 }
