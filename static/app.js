@@ -57,7 +57,34 @@ function fmtDur(s) {
 }
 
 // ============ API 封装 ============
+let authExpiredNotified = false;
+
+// 清掉本地登录态，并同步顶栏（不弹窗、不提示）
+function clearAuthState() {
+  token = '';
+  currentUser = null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  renderUserBox();
+}
+
+// 服务端判定 token 无效：清登录态；写操作直接弹登录框，读操作只提示一次
+function handleAuthExpired(interactive) {
+  clearAuthState();
+  if (!authExpiredNotified) {
+    authExpiredNotified = true;
+    toast('登录已过期，请重新登录');
+  }
+  if (interactive) openAuth('login');
+}
+
 async function api(path, method = 'GET', body) {
+  return apiRequest(path, method, body, true);
+}
+
+// allowRetry：公开读接口遇到过期 token 时，清掉 token 后匿名重试一次，
+// 避免用户因为一个过期 token 连发现页都看不了。
+async function apiRequest(path, method, body, allowRetry) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api' + path, {
@@ -66,6 +93,12 @@ async function api(path, method = 'GET', body) {
     body: body ? JSON.stringify(body) : undefined
   });
   const json = await res.json().catch(() => ({ code: res.status, msg: '响应解析失败' }));
+  // 只有"确实带了 token"才按登录失效处理，避免把匿名请求的 401 当成过期
+  if (res.status === 401 && token && !path.startsWith('/users/login') && !path.startsWith('/users/register')) {
+    handleAuthExpired(method !== 'GET');
+    if (method === 'GET' && allowRetry) return apiRequest(path, method, body, false);
+    throw new Error(json.msg || '登录已过期，请重新登录');
+  }
   if (json.code !== 0) throw new Error(json.msg || '请求失败');
   return json.data;
 }
@@ -85,6 +118,7 @@ function renderUserBox() {
 
 function logout() {
   token = ''; currentUser = null;
+  authExpiredNotified = false;
   localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY);
   renderUserBox(); showView('discover'); toast('已退出登录');
 }
@@ -112,6 +146,7 @@ $('auth-submit').onclick = async () => {
     if (authMode === 'login') {
       const data = await api('/users/login', 'POST', { username, password });
       token = data.token; currentUser = data.user;
+      authExpiredNotified = false;
       localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(USER_KEY, JSON.stringify(data.user));
       $('auth-modal').style.display = 'none';
       renderUserBox(); showView('discover'); toast('欢迎回来，' + (currentUser.nickname || currentUser.username));
@@ -337,6 +372,10 @@ async function uploadFileTo(endpoint, file) {
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api' + endpoint, { method: 'POST', headers, body: fd });
   const json = await res.json().catch(() => ({ code: res.status, msg: '响应解析失败' }));
+  if (res.status === 401 && token) {
+    handleAuthExpired(true);
+    throw new Error(json.msg || '登录已过期，请重新登录');
+  }
   if (json.code !== 0) throw new Error(json.msg || '上传失败');
   return json.data.url;
 }
