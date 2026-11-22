@@ -9,18 +9,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims JWT 载荷：把用户 ID 放进去
+// Claims JWT 载荷：只放用户 ID，昵称等展示信息按 user_id 查库
 type Claims struct {
-	UserID uint   `json:"user_id"`
-	Username string `json:"username"`
+	UserID uint `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken 签发 JWT（登录成功时调用）
-func GenerateToken(cfg *config.JWTConfig, userID uint, username string) (string, error) {
+func GenerateToken(cfg *config.JWTConfig, userID uint) (string, error) {
 	claims := Claims{
-		UserID:   userID,
-		Username: username,
+		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(cfg.Expire) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

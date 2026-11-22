@@ -14,8 +14,7 @@ import (
 //
 //	Auth          → user_id 必定存在；缺失或无效 token 一律 401
 //	AuthOptional  → 没带 token 视为游客；带了但无效（过期/伪造）返回 401
-//	username 不写入上下文：token 里的名字是签发时的快照，可能已过期，
-//	需要用户资料时按 user_id 查库。
+//	token 里只放 user_id：昵称等展示信息按 user_id 查库，避免签发时的快照过期。
 //
 // 注意：cfg 在注册路由时（Auth() 被调用时）加载并捕获，不是每次请求都读环境变量。
 func Auth() gin.HandlerFunc {
