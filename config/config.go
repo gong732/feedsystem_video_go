@@ -12,6 +12,7 @@ type Config struct {
 	MySQL  MySQLConfig
 	Redis  RedisConfig
 	JWT    JWTConfig
+	Upload UploadConfig
 	LLM    LLMConfig // 第二阶段接入大模型时用，先占位
 }
 
@@ -36,6 +37,11 @@ type RedisConfig struct {
 type JWTConfig struct {
 	Secret string
 	Expire int // 过期小时数
+}
+
+// UploadConfig 上传资源边界。
+type UploadConfig struct {
+	DailyMB int // 每个用户每天允许上传的总字节数（MB）
 }
 
 type LLMConfig struct {
@@ -65,6 +71,9 @@ func Load() *Config {
 		JWT: JWTConfig{
 			Secret: getEnv("VIDEO_JWT_SECRET", "video-feed-secret"),
 			Expire: getEnvInt("VIDEO_JWT_EXPIRE_HOURS", 24),
+		},
+		Upload: UploadConfig{
+			DailyMB: getEnvInt("VIDEO_UPLOAD_DAILY_MB", 2048),
 		},
 		LLM: LLMConfig{
 			BaseURL: getEnv("VIDEO_LLM_BASE_URL", "https://api.deepseek.com/v1"),

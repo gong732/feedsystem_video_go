@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"video-feed/config"
 	"video-feed/models"
@@ -31,6 +32,15 @@ func InitMySQL(cfg *config.MySQLConfig) error {
 	DB = db
 	log.Println("✅ MySQL 连接成功:", cfg.DBName)
 
+	// 连接池：不设上限时高并发会把 MySQL 连接数打满。
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("获取底层连接池失败: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
 	// 自动建表（users / follows / videos / likes / comments）
 	if err := db.AutoMigrate(
 		&models.User{},
@@ -43,4 +53,14 @@ func InitMySQL(cfg *config.MySQLConfig) error {
 	}
 	log.Println("✅ 数据表自动迁移完成")
 	return nil
+}
+
+// CloseMySQL 关闭底层连接池。
+func CloseMySQL() {
+	if DB == nil {
+		return
+	}
+	if sqlDB, err := DB.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
 }
