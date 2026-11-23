@@ -9,19 +9,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims JWT 载荷：只放用户 ID，昵称等展示信息按 user_id 查库
+// Claims JWT 载荷：user_id + 登录态版本号。
+// 昵称等展示信息按 user_id 查库，不放进 token（避免签发时的快照过期）。
 type Claims struct {
-	UserID uint `json:"user_id"`
+	UserID  uint `json:"user_id"`
+	Version int  `json:"ver"`
 	jwt.RegisteredClaims
 }
 
-// GenerateToken 签发 JWT（登录成功时调用）
-func GenerateToken(cfg *config.JWTConfig, userID uint) (string, error) {
+// GenerateToken 签发 JWT（登录成功时调用）。
+// version 是用户当前的 token_version；退出登录会递增版本，旧 token 立即失效。
+func GenerateToken(cfg *config.JWTConfig, userID uint, version int) (string, error) {
 	claims := Claims{
-		UserID: userID,
+		UserID:  userID,
+		Version: version,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(cfg.Expire) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "video-feed",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

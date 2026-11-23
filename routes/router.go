@@ -1,66 +1,60 @@
 package routes
 
 import (
+	"time"
+
 	"video-feed/handlers"
 	"video-feed/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterRoutes 注册全部路由
+// RegisterRoutes 注册全部路由。
+//
+// 限流分两类：
+//   - 写操作按账号（登录后可精确定位到人）
+//   - 登录/注册按 IP（此时还没有身份）
 func RegisterRoutes(r *gin.Engine) {
-	// 静态前端
 	r.Static("/static", "./static")
-	r.GET("/", func(c *gin.Context) {
-		c.File("./static/index.html")
-	})
-
-	// 健康检查
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{"msg": "pong"})
-	})
+	r.GET("/", func(c *gin.Context) { c.File("./static/index.html") })
+	r.GET("/ping", func(c *gin.Context) { c.JSON(200, gin.H{"msg": "pong"}) })
 
 	api := r.Group("/api")
+	// 全局：每 IP 30 req/s；JSON 请求体最多 1MB（上传接口自行放宽）。
+	api.Use(middleware.RateLimit("global", 30, time.Second, false))
+	api.Use(middleware.BodyLimit(1 << 20))
 
-	// 全局限流：每 IP 每秒 10 个令牌、桶容量 20（允许短突发）
-	// 令牌桶中间件挡脚本刷接口，保护 MySQL/Redis 不被打挂
-	api.Use(middleware.RateLimit(10, 20))
-
-	// ---- 用户：注册/登录 不需要登录 ----
-	api.POST("/users/register", handlers.Register)
-	api.POST("/users/login", handlers.Login)
+	// ---- 用户 ----
+	api.POST("/users/register", middleware.RateLimit("register", 5, time.Hour, false), handlers.Register)
+	api.POST("/users/login", middleware.RateLimit("login", 10, time.Minute, false), handlers.Login)
+	api.POST("/users/logout", middleware.Auth(), handlers.Logout)
 	api.GET("/users/:id", middleware.AuthOptional(), handlers.GetUserInfo)
 
-	// ---- 关注：需要登录 ----
-	follow := api.Group("", middleware.Auth())
-	follow.POST("/follow/:user_id", handlers.FollowUser)
-	follow.GET("/following/:user_id", handlers.FollowingList)
-	follow.GET("/followers/:user_id", handlers.FollowerList)
-	follow.GET("/is_following/:user_id", handlers.IsFollowing)
-
-	// ---- 视频：浏览公开，但挂软鉴权 ----
+	// ---- 视频浏览/发布 ----
 	api.GET("/videos", middleware.AuthOptional(), handlers.GetVideoList)
 	api.GET("/videos/:id", middleware.AuthOptional(), handlers.GetVideoDetail)
 	api.POST("/videos", middleware.Auth(), handlers.CreateVideo)
 
-	// ---- 文件上传：先拿 URL，再带着 URL 调 POST /videos 发布 ----
-	// 落盘到 ./static/uploads/...，由上面的 r.Static("/static", "./static") 直接对外提供
-	api.POST("/upload/video", middleware.Auth(), handlers.UploadVideo)
-	api.POST("/upload/cover", middleware.Auth(), handlers.UploadCover)
+	// ---- 文件上传 ----
+	api.POST("/upload/video", middleware.Auth(), middleware.RateLimit("upload", 5, time.Hour, true), handlers.UploadVideo)
+	api.POST("/upload/cover", middleware.Auth(), middleware.RateLimit("upload", 5, time.Hour, true), handlers.UploadCover)
 
-	// ---- 点赞：toggle 与状态查询 ----
-	// 写操作必须登录（知道"谁"点了赞）；读状态挂软鉴权，未登录也能看总数
-	api.POST("/videos/:id/like", middleware.Auth(), handlers.ToggleLike)
+	// ---- 点赞 ----
+	api.POST("/videos/:id/like", middleware.Auth(), middleware.RateLimit("like", 30, time.Minute, true), handlers.ToggleLike)
 	api.GET("/videos/:id/like", middleware.AuthOptional(), handlers.GetLikeStatus)
 
-	// ---- 评论：发布/删除需要登录，列表公开 + 软鉴权 ----
-	api.POST("/videos/:id/comments", middleware.Auth(), handlers.CreateComment)
+	// ---- 评论 ----
+	api.POST("/videos/:id/comments", middleware.Auth(), middleware.RateLimit("comment", 10, time.Minute, true), handlers.CreateComment)
 	api.GET("/videos/:id/comments", middleware.AuthOptional(), handlers.ListComments)
 	api.DELETE("/comments/:id", middleware.Auth(), handlers.DeleteComment)
 
-	// ---- Feed 时间线：需要登录（知道你是谁才知道关注了谁）----
-	api.GET("/feed", middleware.Auth(), handlers.GetFeed)
+	// ---- 关注 ----
+	api.POST("/follow/:user_id", middleware.Auth(), middleware.RateLimit("follow", 20, time.Minute, true), handlers.FollowUser)
+	api.GET("/following/:user_id", middleware.Auth(), handlers.FollowingList)
+	api.GET("/followers/:user_id", middleware.Auth(), handlers.FollowerList)
+	api.GET("/is_following/:user_id", middleware.Auth(), handlers.IsFollowing)
 
-	// ---- 热门榜：公开 + 软鉴权 ----
+	// ---- 关注流 / 热榜 ----
+	api.GET("/feed", middleware.Auth(), handlers.GetFeed)
 	api.GET("/hot", middleware.AuthOptional(), handlers.GetHotVideos)
 }

@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.vscode
+
+# 用户上传的文件和本地素材不进镜像（运行时由 compose 绑定挂载 ./static）
+static/uploads
+static/videos
+static/covers
+
+*.log
+video-feed
+README.md

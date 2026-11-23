@@ -43,6 +43,8 @@ services:
       VIDEO_SERVER_PORT: "8081"
       # JWT 过期小时数：默认 24，可在宿主机 .env 里覆盖（如 VIDEO_JWT_EXPIRE_HOURS=72）
       VIDEO_JWT_EXPIRE_HOURS: "${VIDEO_JWT_EXPIRE_HOURS:-24}"
+      # 每个用户每天允许上传的总量（MB）
+      VIDEO_UPLOAD_DAILY_MB: "${VIDEO_UPLOAD_DAILY_MB:-2048}"
       TZ: Asia/Shanghai
     ports:
       - "8081:8081"                # 前端入口
