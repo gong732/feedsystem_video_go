@@ -45,10 +45,12 @@ func VideoExists(ctx context.Context, id uint) (bool, error) {
 
 // ListDiscoverDB 发现页冷数据/Redis 不可用时的回源查询。
 // 游标使用 created_ts（毫秒），按时间倒序 keyset 分页。
-func ListDiscoverDB(ctx context.Context, cursor int64, limit int) ([]models.Video, error) {
+func ListDiscoverDB(ctx context.Context, cursorTs int64, cursorID uint, limit int) ([]models.Video, error) {
 	q := database.DB.WithContext(ctx).Where("status = ?", 1)
-	if cursor > 0 {
-		q = q.Where("created_ts < ?", cursor)
+	if cursorTs > 0 {
+		// 元组比较：比 (cursorTs, cursorID) 更老，才进入下一页
+		q = q.Where("(created_ts < ?) OR (created_ts = ? AND id < ?)",
+			cursorTs, cursorTs, cursorID)
 	}
 	var videos []models.Video
 	err := q.Order("created_ts DESC, id DESC").Limit(limit).Find(&videos).Error
@@ -68,7 +70,7 @@ func ListNewDB(ctx context.Context, followIDs []uint, since int64, limit int) ([
 }
 
 // ListFeedColdDB 关注流"翻旧"冷区：排除热区已取到的 id，取更老的数据。
-func ListFeedColdDB(ctx context.Context, followIDs []uint, cursor int64, exclude []uint, limit int) ([]models.Video, error) {
+func ListFeedColdDB(ctx context.Context, followIDs []uint, cursorTs int64, cursorID uint, exclude []uint, limit int) ([]models.Video, error) {
 	if len(followIDs) == 0 || limit <= 0 {
 		return []models.Video{}, nil
 	}
@@ -77,8 +79,9 @@ func ListFeedColdDB(ctx context.Context, followIDs []uint, cursor int64, exclude
 	if len(exclude) > 0 {
 		q = q.Where("id NOT IN ?", exclude)
 	}
-	if cursor > 0 {
-		q = q.Where("created_ts < ?", cursor)
+	if cursorTs > 0 {
+		q = q.Where("(created_ts < ?) OR (created_ts = ? AND id < ?)",
+			cursorTs, cursorTs, cursorID)
 	}
 	var videos []models.Video
 	err := q.Order("created_ts DESC, id DESC").Limit(limit).Find(&videos).Error

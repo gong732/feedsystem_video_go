@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -28,29 +29,62 @@ func viewKey(id uint) string {
 	return fmt.Sprintf("%s%d", viewKeyPrefix, id)
 }
 
-// DiscoverPage 发现页时间线：cursor=0 取最新，cursor>0 取比它更老的。
-func DiscoverPage(ctx context.Context, cursor int64, limit int) ([]TimelineItem, error) {
+// DiscoverPage 发现页时间线。
+func DiscoverPage(ctx context.Context, cursorTs int64, cursorID uint, limit int) ([]TimelineItem, error) {
 	if !RedisReady() {
 		return nil, ErrCacheDisabled
 	}
-	var (
-		zs  []redis.Z
-		err error
-	)
-	if cursor > 0 {
-		zs, err = database.RDB.ZRevRangeByScoreWithScores(ctx, allVideosKey, &redis.ZRangeBy{
-			Max:    "(" + strconv.FormatInt(cursor, 10),
-			Min:    "-inf",
-			Offset: 0,
-			Count:  int64(limit),
-		}).Result()
-	} else {
-		zs, err = database.RDB.ZRevRangeWithScores(ctx, allVideosKey, 0, int64(limit-1)).Result()
+
+	// 第一页：直接取最新 limit 条
+	if cursorTs == 0 {
+		zs, err := database.RDB.ZRevRangeWithScores(ctx, allVideosKey, 0,
+			int64(limit-1)).Result()
+		if err != nil {
+			return nil, NoteRedisError(err)
+		}
+		return redisZToItems(zs), nil
 	}
+
+	items := make([]TimelineItem, 0, limit)
+
+	// ① 同毫秒（score == cursorTs）且 id < cursorID 的条目，按 id 倒序排在前面
+	same, err := database.RDB.ZRangeByScoreWithScores(ctx, allVideosKey,
+		&redis.ZRangeBy{
+			Min: strconv.FormatInt(cursorTs, 10),
+			Max: strconv.FormatInt(cursorTs, 10),
+		}).Result()
 	if err != nil {
 		return nil, NoteRedisError(err)
 	}
-	return redisZToItems(zs), nil
+	sameItems := redisZToItems(same)
+	kept := make([]TimelineItem, 0, len(sameItems))
+	for _, it := range sameItems {
+		if it.VideoID < cursorID {
+			kept = append(kept, it)
+		}
+	}
+	sort.Slice(kept, func(i, j int) bool {
+		return kept[i].VideoID >
+			kept[j].VideoID
+	})
+	items = append(items, kept...)
+
+	// ② 严格更老（score < cursorTs）的条目，补足剩余
+	if len(items) < limit {
+		older, err := database.RDB.ZRevRangeByScoreWithScores(ctx,
+			allVideosKey, &redis.ZRangeBy{
+				Max:    "(" + strconv.FormatInt(cursorTs, 10),
+				Min:    "-inf",
+				Offset: 0,
+				Count:  int64(limit - len(items)),
+			}).Result()
+		if err != nil {
+			return nil, NoteRedisError(err)
+		}
+		items = append(items, redisZToItems(older)...)
+	}
+
+	return items, nil
 }
 
 // RebuildDiscover 用 MySQL 重新构建全站时间线。
@@ -59,7 +93,7 @@ func RebuildDiscover(ctx context.Context) error {
 	if !RedisReady() {
 		return ErrCacheDisabled
 	}
-	videos, err := ListDiscoverDB(ctx, 0, 1000)
+	videos, err := ListDiscoverDB(ctx, 0, 0, 1000)
 	if err != nil {
 		return err
 	}

@@ -84,13 +84,14 @@ func (s *VideoService) fanout(authorID, videoID uint, ts int64) {
 }
 
 // Discover 发现页：Redis 时间线优先，空/故障时 singleflight 重建，再回源 MySQL。
-func (s *VideoService) Discover(ctx context.Context, uid uint, cursor int64, limit int) (*Page[models.Video], error) {
+func (s *VideoService) Discover(ctx context.Context, uid uint, cursor string, limit int) (*Page[models.Video], error) {
+	cursorTs, cursorID := parseCursor(cursor)
 	if limit <= 0 || limit > 50 {
 		limit = 12
 	}
 
-	members, err := repository.DiscoverPage(ctx, cursor, limit)
-	if err != nil && cursor == 0 {
+	members, err := repository.DiscoverPage(ctx, cursorTs, cursorID, limit)
+	if err != nil && cursorTs == 0 {
 		// 时间线丢了就重建一次；singleflight 保证并发只重建一次。
 		_, _, _ = discoverSF.Do("discover-rebuild", func() (interface{}, error) {
 			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -100,7 +101,7 @@ func (s *VideoService) Discover(ctx context.Context, uid uint, cursor int64, lim
 			}
 			return nil, nil
 		})
-		members, err = repository.DiscoverPage(ctx, cursor, limit)
+		members, err = repository.DiscoverPage(ctx, cursorTs, cursorID, limit)
 	}
 
 	if err == nil && len(members) > 0 {
@@ -119,14 +120,15 @@ func (s *VideoService) Discover(ctx context.Context, uid uint, cursor int64, lim
 
 			page := newPage(ordered)
 			if len(members) >= limit {
-				page.NextCursor = members[len(members)-1].Ts
+				last := members[len(members)-1]
+				page.NextCursor = formatCursor(last.Ts, last.VideoID)
 			}
 			return page, nil
 		}
 	}
 
 	// 冷数据 / Redis 不可用：MySQL keyset 回源。
-	videos, err := repository.ListDiscoverDB(ctx, cursor, limit)
+	videos, err := repository.ListDiscoverDB(ctx, cursorTs, cursorID, limit)
 	if err != nil {
 		return nil, apierror.Internal(err)
 	}
@@ -135,7 +137,8 @@ func (s *VideoService) Discover(ctx context.Context, uid uint, cursor int64, lim
 
 	page := newPage(videos)
 	if len(videos) == limit {
-		page.NextCursor = videos[len(videos)-1].CreatedTs
+		last := videos[len(videos)-1]
+		page.NextCursor = formatCursor(last.CreatedTs, last.ID)
 	}
 	return page, nil
 }

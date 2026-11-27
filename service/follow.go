@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strconv"
 
 	"video-feed/apierror"
 	"video-feed/models"
@@ -99,7 +100,7 @@ func (s *FollowService) Following(ctx context.Context, uid uint, cursor int64, l
 
 	page := newPage(cards)
 	if hasMore && len(rows) > 0 {
-		page.NextCursor = int64(rows[len(rows)-1].ID)
+		page.NextCursor = strconv.FormatUint(uint64(rows[len(rows)-1].ID), 10)
 	}
 	return page, nil
 }
@@ -146,7 +147,7 @@ func (s *FollowService) Followers(ctx context.Context, uid uint, cursor int64, l
 
 	page := newPage(cards)
 	if hasMore && len(rows) > 0 {
-		page.NextCursor = int64(rows[len(rows)-1].ID)
+		page.NextCursor = strconv.FormatUint(uint64(rows[len(rows)-1].ID), 10)
 	}
 	return page, nil
 }

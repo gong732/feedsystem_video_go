@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -111,7 +112,7 @@ func (s *CommentService) List(ctx context.Context, videoID uint, cursor int64, l
 
 	page := newPage(comments)
 	if hasMore && len(comments) > 0 {
-		page.NextCursor = int64(comments[len(comments)-1].ID)
+		page.NextCursor = strconv.FormatUint(uint64(comments[len(comments)-1].ID), 10)
 	}
 	return page, nil
 }

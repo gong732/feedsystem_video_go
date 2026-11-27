@@ -16,11 +16,12 @@ type FeedService struct{}
 //	since > 0        拉新：只要比 since 更新的视频（前端轮询用）
 //	cursor > 0       翻页：直接从 MySQL 取比 cursor 更老的（保证翻页不重复）
 //	since = cursor=0 首页：Redis 热时间线优先，不足再补 MySQL 冷区
-func (s *FeedService) Get(ctx context.Context, me uint, since, cursor int64, limit int) (*Page[models.Video], error) {
+func (s *FeedService) Get(ctx context.Context, me uint, since int64, cursor string, limit int) (*Page[models.Video], error) {
 	if limit <= 0 || limit > 50 {
 		limit = 12
 	}
 	need := limit + 1
+	cursorTs, cursorID := parseCursor(cursor)
 
 	followIDs, err := repository.FollowIDs(ctx, me)
 	if err != nil {
@@ -62,9 +63,9 @@ func (s *FeedService) Get(ctx context.Context, me uint, since, cursor int64, lim
 			pool = mergeVideos(pool, dbVideos)
 		}
 
-	case cursor > 0:
+	case cursorTs > 0:
 		// 翻页：热区最多 200 条，翻页直接走 MySQL，避免"重复第一页"。
-		dbVideos, err := repository.ListFeedColdDB(ctx, followIDs, cursor, nil, need)
+		dbVideos, err := repository.ListFeedColdDB(ctx, followIDs, cursorTs, cursorID, nil, need)
 		if err != nil {
 			return nil, apierror.Internal(err)
 		}
@@ -88,11 +89,13 @@ func (s *FeedService) Get(ctx context.Context, me uint, since, cursor int64, lim
 			}
 		}
 		if len(pool) < need {
-			var cursorTs int64
+			var cTs int64
+			var cID uint
 			if len(pool) > 0 {
-				cursorTs = pool[len(pool)-1].CreatedTs
+				cTs = pool[len(pool)-1].CreatedTs
+				cID = pool[len(pool)-1].ID
 			}
-			dbVideos, err := repository.ListFeedColdDB(ctx, followIDs, cursorTs, hotIDs, need-len(pool))
+			dbVideos, err := repository.ListFeedColdDB(ctx, followIDs, cTs, cID, hotIDs, need-len(pool))
 			if err != nil {
 				return nil, apierror.Internal(err)
 			}
@@ -115,7 +118,8 @@ func (s *FeedService) Get(ctx context.Context, me uint, since, cursor int64, lim
 	page := newPage[models.Video](nil)
 	if len(pool) > limit {
 		pool = pool[:limit]
-		page.NextCursor = pool[len(pool)-1].CreatedTs
+		last := pool[len(pool)-1]
+		page.NextCursor = formatCursor(last.CreatedTs, last.ID)
 	}
 	page.List = pool
 

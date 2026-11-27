@@ -12,7 +12,7 @@ func GetFeed(c *gin.Context) {
 		c.Request.Context(),
 		c.GetUint("user_id"),
 		queryInt64(c, "since"),
-		queryInt64(c, "cursor"),
+		c.Query("cursor"),
 		queryLimit(c, 10, 50),
 	)
 	if err != nil {

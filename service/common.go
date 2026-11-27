@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
-
+	"strconv"
+	"strings"
 	"video-feed/models"
 	"video-feed/repository"
 
@@ -19,10 +21,31 @@ var (
 
 // Page 统一分页响应：list 永远非 nil，next_cursor=0 表示没有下一页。
 type Page[T any] struct {
-	List       []T   `json:"list"`
-	NextCursor int64 `json:"next_cursor"`
+	List       []T    `json:"list"`
+	NextCursor string `json:"next_cursor"` // 格式:"ts:id"，空串=到底
 }
 
+// formatCursor 把游标编码成 "ts:id"。
+func formatCursor(ts int64, id uint) string {
+	return fmt.Sprintf("%d:%d", ts, id)
+}
+
+// parseCursor 解析 "ts:id"；空串或非法格式都返回 (0,0)，即第一页。
+func parseCursor(s string) (int64, uint) {
+	if s == "" {
+		return 0, 0
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	ts, err1 := strconv.ParseInt(parts[0], 10, 64)
+	id, err2 := strconv.ParseUint(parts[1], 10, 64)
+	if err1 != nil || err2 != nil || ts <= 0 || id == 0 {
+		return 0, 0
+	}
+	return ts, uint(id)
+}
 func newPage[T any](list []T) *Page[T] {
 	if list == nil {
 		list = make([]T, 0)

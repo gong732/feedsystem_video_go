@@ -41,7 +41,7 @@ func GetVideoList(c *gin.Context) {
 	page, err := service.Videos.Discover(
 		c.Request.Context(),
 		c.GetUint("user_id"),
-		queryInt64(c, "cursor"),
+		c.Query("cursor"),
 		queryLimit(c, 6, 50),
 	)
 	if err != nil {

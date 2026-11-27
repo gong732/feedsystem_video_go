@@ -6,8 +6,8 @@ let token = localStorage.getItem(TOKEN_KEY) || '';
 let currentUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
 let feedCursor = 0;   // 关注流游标（兼容旧引用）
 // B站式关注流状态：内存保留列表 + 双锚（顶部锚拉新 / 底部锚翻旧）
-let feedCache = { items: [], topTs: 0, cursor: 0, ended: false };
-let discoverCursor = 0; // 发现页游标（Redis 时间线位置，0=从头）
+let feedCache = { items: [], topTs: 0, cursor: '', ended: false };
+let discoverCursor = ''; // 发现页游标（空串=从头）
 let discoverEnded = false; // 发现页是否到底（无限流停止条件）
 
 // ============ 无限流：滚动到底自动加载 ============
@@ -188,7 +188,7 @@ function renderView(name) {
 
 // ---- 发现（全站时间线，Redis 游标分页） ----
 function renderDiscover(main) {
-  discoverCursor = 0;
+  discoverCursor = '';
   discoverEnded = false;
   main.innerHTML =
     '<div class="view-title">发现<span>全站最新视频</span></div>' +
@@ -216,23 +216,23 @@ async function loadDiscover() {
   if (status) status.innerHTML = '<span class="more-hint">加载中...</span>';
   try {
     const data = await api('/videos?cursor=' + discoverCursor + '&limit=6');
-    if (discoverCursor === 0 && data.list.length === 0) {
+    if (discoverCursor === '' && data.list.length === 0) {
       list.innerHTML = '<div class="empty"><div class="big">📭</div>还没有视频，去发布第一个吧</div>';
       if (status) status.style.display = 'none';
     } else {
-      if (discoverCursor === 0) list.innerHTML = ''; // 清掉骨架屏，换成真实卡片
+      if (discoverCursor === '') list.innerHTML = ''; // 清掉骨架屏，换成真实卡片
       list.insertAdjacentHTML('beforeend', data.list.map(v => cardHTML(v, true)).join(''));
       initFollowStates();
-      if (data.next_cursor && data.next_cursor > 0) {
+      if (data.next_cursor) {
         discoverCursor = data.next_cursor; // 还有更多，记住位置
         if (status) status.innerHTML = '<span class="more-hint">上滑加载更多</span>';
       } else {
-        discoverEnded = true; // next_cursor=0 = 到底
+        discoverEnded = true; // next_cursor 空 = 到底
         if (status) status.innerHTML = '<span class="more-end">— 没有更多了 —</span>';
       }
     }
   } catch (e) {
-    if (discoverCursor === 0) list.innerHTML = '';
+    if (discoverCursor === '') list.innerHTML = '';
     list.insertAdjacentHTML('beforeend', '<div class="empty">加载失败：' + esc(e.message) + '</div>');
     if (status) status.innerHTML = '<span class="more-hint">加载失败，上滑重试</span>';
   }
@@ -316,7 +316,7 @@ async function loadFeed() {
   const status = $('feed-more');
   if (status) status.innerHTML = '<span class="more-hint">加载中...</span>';
   try {
-    const q = feedCache.cursor > 0 ? '?cursor=' + feedCache.cursor : '';
+    const q = feedCache.cursor ? '?cursor=' + feedCache.cursor : '';
     const data = await api('/feed' + q);
     if (feedCache.items.length === 0 && data.list.length === 0) {
       list.innerHTML = '<div class="empty"><div class="big">👣</div>你还没有关注任何人<br><span style="font-size:12px;">去"发现"页关注几个作者，这里就会出现他们的视频</span></div>';
@@ -332,7 +332,7 @@ async function loadFeed() {
     if (feedCache.topTs === 0 && fresh.length > 0) {
       feedCache.topTs = Date.parse(fresh[0].created_at); // 首次：设顶部锚（毫秒）
     }
-    feedCache.cursor = data.next_cursor || 0;            // 更新底部锚
+    feedCache.cursor = data.next_cursor || '';            // 更新底部锚
     if (data.list.length < 10) {
       feedCache.ended = true;                            // 到底：无限流停止
       if (status) status.innerHTML = '<span class="more-end">— 没有更多了 —</span>';
